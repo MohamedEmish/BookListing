@@ -1,40 +1,69 @@
 package com.example.amosh.booklisting;
 
-import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.DrawFilter;
+import android.graphics.drawable.Drawable;
+import android.net.Uri;
+import android.support.annotation.NonNull;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
+import android.widget.ImageView;
+import android.widget.ListView;
 import android.widget.TextView;
 
-import java.util.ArrayList;
+import com.squareup.picasso.Picasso;
 
-public class BookAdapter  extends ArrayAdapter<Book> {
-    private static final String LOG_TAG = BookAdapter.class.getSimpleName();
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.ProtocolException;
+import java.net.URL;
+import java.net.URLConnection;
 
-    public BookAdapter(Activity context, ArrayList<Book> placeArrayList) {
-        super(context, 0, placeArrayList);
+
+public class BookAdapter extends ArrayAdapter<Book> {
+
+    public BookAdapter(Context context, int resource) {
+        super(context, resource);
     }
+
 
     @Override
-    public View getView(int position, View convertView, ViewGroup parent) {
-        // Check if the existing view is being reused, otherwise inflate the view
-        View listItemView = convertView;
-        if (listItemView == null) {
-            listItemView = LayoutInflater.from(getContext()).inflate(
+    public View getView(int position, View view, ViewGroup parent) {
+
+        final Book book = getItem(position);
+        View listItemView = view;
+
+        if (view == null) {
+            view = LayoutInflater.from(getContext()).inflate(
                     R.layout.item_list, parent, false);
         }
-        Book currentBook = getItem(position);
 
-        TextView bookNameTextView = (TextView) listItemView.findViewById(R.id.bookName);
-        bookNameTextView.setText(currentBook.getmBookName());
+        TextView title = (TextView) view.findViewById(R.id.title);
+        title.setText(book.getTitle());
 
-        TextView authorNameTextView = (TextView) listItemView.findViewById(R.id.authorName);
-        authorNameTextView.setText(currentBook.getmAuthor());
+        TextView authorTxt = (TextView) view.findViewById(R.id.authorA);
+        authorTxt.setText(book.getAuthor());
+
+        ImageView thumb = (ImageView) view.findViewById(R.id.thumb);
+
+        // To get Picasso ..
+        // put in ur build.gradle(Module:app)
+        // implementation 'com.squareup.picasso:picasso:2.5.2'
+        // Only
 
 
-        View textContainer = listItemView.findViewById(R.id.text_container);
-        return listItemView;
+        Uri bookUri = Uri.parse(book.getImageUrl());
+        Picasso.with(getContext()).load(bookUri).into(thumb);
 
+        return view;
     }
+
 }

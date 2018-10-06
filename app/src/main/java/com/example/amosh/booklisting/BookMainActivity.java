@@ -1,6 +1,5 @@
 package com.example.amosh.booklisting;
 
-import android.app.LoaderManager;
 import android.content.Context;
 import android.content.Intent;
 import android.net.ConnectivityManager;
@@ -8,137 +7,231 @@ import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.ListView;
-import android.content.AsyncTaskLoader;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+import android.widget.Toast;
 
-import java.util.ArrayList;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.nio.charset.Charset;
 import java.util.List;
 
-import android.app.LoaderManager;
-import android.app.LoaderManager.LoaderCallbacks;
-import android.content.Loader;
-import android.widget.TextView;
+public class BookMainActivity extends AppCompatActivity {
 
-public class BookMainActivity extends AppCompatActivity implements LoaderCallbacks<List<Book>>{
-
-    private static final String LOG_TAG = BookMainActivity.class.getName();
-
-    /* URL for Book data from the googleapis dataset */
-    private static final String BOOKS_REQUEST_URL =
-            "https://www.googleapis.com/books/v1/volumes?q=android&maxResults=1";
-    /**
-     * Constant value for the Book loader ID. We can choose any integer.
-     * This really only comes into play if you're using multiple loaders.
-     */
-    private static final int BOOK_LOADER_ID = 1;
-    /**
-     * Adapter for the list of books
-     */
-    private BookAdapter mAdapter;
-    private TextView mEmptyStateTextView;
-
-    EditText mEditText;
-    Button mButton;
+    static final String SEARCH_RESULTS = "booksSearchResults";
+    EditText editText;
+    Button button;
+    BookAdapter adapter;
+    ListView listView;
+    TextView NoDataFound;
+    ImageView imageView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_book_main);
 
-        mEditText = (EditText) findViewById(R.id.search_word);
-        mButton = (Button) findViewById(R.id.search_button);
+        editText = (EditText) findViewById(R.id.editText);
+        imageView = (ImageView) findViewById(R.id.thumb);
+        button = (Button) findViewById(R.id.button);
+        NoDataFound = (TextView) findViewById(R.id.no_data_found);
 
-        // Find a reference to the {@link ListView} in the layout
-        ListView listView = (ListView) findViewById(R.id.list);
+        adapter = new BookAdapter(this, -1);
 
-
-        // Create a new adapter that takes an empty list of books as input
-        mAdapter = new BookAdapter(this, new ArrayList<Book>());
-
-        // Set the adapter on the {@link ListView}
-        // so the list can be populated in the user interface
-        listView.setAdapter(mAdapter);
-
-        mEmptyStateTextView = (TextView) findViewById(R.id.empty_view);
-        listView.setEmptyView(mEmptyStateTextView);
-
-        // Set an item click listener on the ListView, which sends an intent to a web browser
-        // to open a website with more information about the selected book.
+        listView = (ListView) findViewById(R.id.listView);
+        listView.setAdapter(adapter);
         listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-            @Override
+
             public void onItemClick(AdapterView<?> adapterView, View view, int position, long l) {
-                // Find the current book that was clicked on
-                Book currentBook = mAdapter.getItem(position);
+                Book currentBook = adapter.getItem(position);
+                Uri bookUri = Uri.parse(currentBook.getUrl());
 
-                // Convert the String URL into a URI object (to pass into the Intent constructor)
-                Uri bookUri = Uri.parse(currentBook.getmUrl());
-
-                // Create a new intent to view the book URI
+                // Create a new intent to view the earthquake URI
                 Intent websiteIntent = new Intent(Intent.ACTION_VIEW, bookUri);
 
                 // Send the intent to launch a new activity
                 startActivity(websiteIntent);
             }
         });
-        // Get a reference to the ConnectivityManager to check state of network connectivity
-        ConnectivityManager connMgr = (ConnectivityManager)
-                getSystemService(Context.CONNECTIVITY_SERVICE);
 
-        // Get details on the currently active default data network
-        NetworkInfo networkInfo = connMgr.getActiveNetworkInfo();
-        // If there is a network connection, fetch data
-        if (networkInfo != null && networkInfo.isConnected()) {
-            // Get a reference to the LoaderManager, in order to interact with loaders.
-            android.app.LoaderManager loaderManager = getLoaderManager();
-            // Initialize the loader. Pass in the int ID constant defined above and pass in null for
-            // the bundle. Pass in this activity for the LoaderCallbacks parameter (which is valid
-            // because this activity implements the LoaderCallbacks interface).
-            loaderManager.initLoader(BOOK_LOADER_ID, null, this);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+
+                if (isInternetConnectionAvailable()) {
+                    BookAsyncTask task = new BookAsyncTask();
+                    task.execute();
+                } else {
+                    Toast.makeText(BookMainActivity.this, R.string.error_no_internet,
+                            Toast.LENGTH_SHORT).show();
+                }
+
+            }
+        });
+
+        if (savedInstanceState != null) {
+            Book[] books = (Book[]) savedInstanceState.getParcelableArray(SEARCH_RESULTS);
+            adapter.addAll(books);
+        }
+    }
+
+    private boolean isInternetConnectionAvailable() {
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+        if (null == activeNetwork)
+            return false;
+        return activeNetwork.isConnectedOrConnecting();
+    }
+
+    private void updateUi(List<Book> books) {
+        if (books.isEmpty()) {
+            NoDataFound.setVisibility(View.VISIBLE);
         } else {
-            // Otherwise, display error
-            // First, hide loading indicator so error message will be visible
-            View loadingIndicator = findViewById(R.id.loading_indicator);
-            loadingIndicator.setVisibility(View.GONE);
-            // Update empty state with no connection error message
-            mEmptyStateTextView.setText(R.string.no_internet_connection);
+            NoDataFound.setVisibility(View.GONE);
         }
+        adapter.clear();
+        adapter.addAll(books);
+    }
+
+    private String getUserInput() {
+        return editText.getText().toString();
+    }
+
+    private String getUrlForHttpRequest() {
+        final String baseUrl = "https://www.googleapis.com/books/v1/volumes?q=search+";
+        String formatUserInput = getUserInput().trim().replaceAll("\\s+", "+");
+        String url = baseUrl + formatUserInput;
+        return url;
     }
 
     @Override
-    public android.content.Loader<List<Book>> onCreateLoader(int i, Bundle bundle) {
-        // Create a new loader for the given URL
-        return new BookLoader(this, BOOKS_REQUEST_URL);
-    }
-
-    @Override
-    public void onLoadFinished(android.content.Loader<List<Book>> loader, List<Book> books) {
-
-        // Hide loading indicator because the data has been loaded
-        View loadingIndicator = findViewById(R.id.loading_indicator);
-        loadingIndicator.setVisibility(View.GONE);
-
-        // Set empty state text to display "No books found."
-
-        mEmptyStateTextView.setText(R.string.no_books);
-
-        // Clear the adapter of previous books data
-        mAdapter.clear();
-
-        // If there is a valid list of {@link Books}s, then add them to the adapter's
-        // data set. This will trigger the ListView to update.
-        if (books != null && !books.isEmpty()) {
-            mAdapter.addAll(books);
+    public void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        Book[] books = new Book[adapter.getCount()];
+        for (int i = 0; i < books.length; i++) {
+            books[i] = adapter.getItem(i);
         }
+        outState.putParcelableArray(SEARCH_RESULTS, books);
     }
 
-    @Override
-    public void onLoaderReset(android.content.Loader<List<Book>> loader) {
-        // Loader reset, so we can clear out our existing data.
-        mAdapter.clear();
+    private class BookAsyncTask extends AsyncTask<URL, Void, List<Book>> {
+
+        LinearLayout linlaHeaderProgress = (LinearLayout) findViewById(R.id.linlaHeaderProgress);
+
+        @Override
+        protected void onPreExecute() {
+            // SHOW THE SPINNER WHILE LOADING FEEDS
+            linlaHeaderProgress.setVisibility(View.VISIBLE);
+            listView.setVisibility(View.GONE);
+        }
+
+        @Override
+        protected List<Book> doInBackground(URL... urls) {
+            URL url = createURL(getUrlForHttpRequest());
+            String jsonResponse = "";
+
+            try {
+                jsonResponse = makeHttpRequest(url);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            List<Book> books = parseJson(jsonResponse);
+            return books;
+        }
+
+        @Override
+        protected void onPostExecute(List<Book> books) {
+            if (books == null) {
+                return;
+            }
+            updateUi(books);
+            linlaHeaderProgress.setVisibility(View.GONE);
+            listView.setVisibility(View.VISIBLE);
+        }
+
+        private URL createURL(String stringUrl) {
+            try {
+                return new URL(stringUrl);
+            } catch (MalformedURLException e) {
+                e.printStackTrace();
+                return null;
+            }
+        }
+
+        private String makeHttpRequest(URL url) throws IOException {
+            String jsonResponse = "";
+
+            if (url == null) {
+                return jsonResponse;
+            }
+
+            HttpURLConnection urlConnection = null;
+            InputStream inputStream = null;
+
+            try {
+                urlConnection = (HttpURLConnection) url.openConnection();
+                urlConnection.setRequestMethod("GET");
+                urlConnection.setReadTimeout(10000 /* milliseconds */);
+                urlConnection.setConnectTimeout(15000 /* milliseconds */);
+                urlConnection.connect();
+                if (urlConnection.getResponseCode() == 200) {
+                    inputStream = urlConnection.getInputStream();
+                    jsonResponse = readFromStream(inputStream);
+                } else {
+                    Log.e("BookMainActivity", "Error response code: " + urlConnection.getResponseCode());
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                if (urlConnection != null) {
+                    urlConnection.disconnect();
+                }
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            }
+            return jsonResponse;
+        }
+
+        private String readFromStream(InputStream inputStream) throws IOException {
+            StringBuilder output = new StringBuilder();
+            if (inputStream != null) {
+                InputStreamReader inputStreamReader = new InputStreamReader(inputStream, Charset.forName("UTF-8"));
+                BufferedReader reader = new BufferedReader(inputStreamReader);
+                String line = reader.readLine();
+                while (line != null) {
+                    output.append(line);
+                    line = reader.readLine();
+                }
+            }
+            return output.toString();
+        }
+
+        private List<Book> parseJson(String json) {
+
+            if (json == null) {
+                return null;
+            }
+
+            List<Book> books = QueryUtils.extractBooks(json);
+            return books;
+        }
     }
 }
